@@ -6,15 +6,15 @@ FocusGuard is a native Android application built with **Kotlin**, **Jetpack Comp
 
 ## 📱 Screenshots
 
-> *You can add your application screenshots here by placing image files in a `screenshots/` directory or replacing the placeholder links below.*
+> In compliance with Android OS security policies and `FLAG_SECURE` window protection, system biometric prompts (fingerprint/face scan) are protected against screen capture. FocusGuard's salted PIN keypad serves as the secure, inspectable authentication surface.
 
-| Home Dashboard | App Restrictions | Digital Detox Programs |
-|:---:|:---:|:---:|
-| ![Home Screen](screenshots/home_screen.png) <br><sub>*Today's focus overview & countdown*</sub> | ![Restrictions Screen](screenshots/restrictions_screen.png) <br><sub>*Custom app limits & windows*</sub> | ![Detox Screen](screenshots/detox_screen.png) <br><sub>*Gradual reduction & streak*</sub> |
+| Home Dashboard | App Restrictions | Digital Detox Protocol | New Detox Program |
+|:---:|:---:|:---:|:---:|
+| <img src="screenshots/home_screen.png" width="220" alt="Home Dashboard" /> <br><sub>*Today's focus status & active rules*</sub> | <img src="screenshots/restrictions_screen.png" width="220" alt="App Restrictions" /> <br><sub>*Search & restrict installed apps*</sub> | <img src="screenshots/detox_screen.png" width="220" alt="Detox Protocol" /> <br><sub>*Daily check-in & reduction roadmap*</sub> | <img src="screenshots/new_detox_dialog.png" width="220" alt="Detox Wizard" /> <br><sub>*Custom goals & 7-day lock*</sub> |
 
-| Real-Time Block Overlay | Mindful Pause Breathing | Biometric App Lock |
+| Screen Time Analytics | Settings & Permissions | FocusGuard App Lock |
 |:---:|:---:|:---:|
-| ![Block Overlay](screenshots/block_overlay.png) <br><sub>*Instant restriction cutoff*</sub> | ![Mindful Pause](screenshots/mindful_pause.png) <br><sub>*10s reflection exercise*</sub> | ![App Lock](screenshots/app_lock.png) <br><sub>*Salted PIN & biometric unlock*</sub> |
+| <img src="screenshots/stats_screen.png" width="220" alt="Screen Time Analytics" /> <br><sub>*7-Day usage activity bar chart*</sub> | <img src="screenshots/settings_screen.png" width="220" alt="Settings & Permissions" /> <br><sub>*System permissions & security toggles*</sub> | <img src="screenshots/app_lock_pin.png" width="220" alt="App Lock Keypad" /> <br><sub>*Salted PIN security keypad*</sub> |
 
 ---
 
