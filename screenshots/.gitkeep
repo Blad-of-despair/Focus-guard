@@ -1,7 +1,13 @@
-# Place your application screenshots in this directory:
-# - home_screen.png
-# - restrictions_screen.png
-# - detox_screen.png
-# - block_overlay.png
-# - mindful_pause.png
-# - app_lock.png
+# FocusGuard Screenshots Directory
+#
+# Copy or drop your screenshots into this directory with these exact names:
+#
+# 1. home_screen.png        <- Screenshot 2026-10-14 194749.png (Home dashboard & active limits)
+# 2. restrictions_screen.png <- Screenshot 2026-10-14 194803.png (Configured restrictions & 300+ installed apps)
+# 3. detox_screen.png       <- Screenshot 2026-10-14 194844.png (Addiction remover & gradual reduction roadmap)
+# 4. new_detox_dialog.png   <- Screenshot 2026-10-14 194829.png (New detox program wizard with 7-day lock)
+# 5. stats_screen.png       <- Screenshot 2026-10-14 194900.png (Screen time analytics & 7-day weekly bar chart)
+# 6. settings_screen.png    <- Screenshot 2026-10-14 194917.png (Security settings & system permissions checklist)
+# 7. app_lock_pin.png       <- Screenshot 2026-10-14 194730.png (FocusGuard locked PIN keypad)
+#
+# Note: System biometric prompt windows (fingerprint/face) cannot be captured on Android due to hardware-enforced OS security policies and FLAG_SECURE.
