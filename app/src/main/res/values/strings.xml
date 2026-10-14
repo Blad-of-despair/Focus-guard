@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">FocusGuard</string>
+    <string name="accessibility_service_description">FocusGuard uses this service to detect when a restricted application is opened in the foreground, allowing it to enforce time limits, mindful pause breathing screens, and commitment locks immediately.</string>
+    <string name="notification_channel_monitoring">FocusGuard Active Protection</string>
+    <string name="notification_channel_monitoring_desc">Ongoing background monitoring to keep your app limits and commitment locks active.</string>
+    <string name="notification_channel_warnings">Focus Warnings</string>
+    <string name="notification_channel_warnings_desc">Notifies you 5 minutes before your daily app limit expires.</string>
+    <string name="device_admin_description">FocusGuard Device Administrator prevents unauthorized uninstallation during active 7-Day Commitment Locks.</string>
+</resources>

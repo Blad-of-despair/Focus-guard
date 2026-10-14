@@ -1,0 +1,6 @@
+{
+  "name": "FocusGuard",
+  "description": "App restriction controller, digital detox addiction remover, 7-day commitment lock, and biometric app locker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
