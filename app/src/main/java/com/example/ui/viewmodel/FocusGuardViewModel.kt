@@ -20,6 +20,7 @@ import com.example.engine.ClockTamperingResult
 import com.example.engine.CommitmentLockValidator
 import com.example.engine.DetoxPlanGenerator
 import com.example.engine.ValidationResult
+import com.example.service.CutoffScheduler
 import com.example.util.PermissionHelper
 import com.example.util.PermissionItem
 import kotlinx.coroutines.Dispatchers
@@ -204,6 +205,9 @@ class FocusGuardViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             database.restrictionDao().insertRestriction(finalRestriction)
+            if (CutoffScheduler.currentlyScheduledPackage == finalRestriction.packageName) {
+                CutoffScheduler.cancel(app, finalRestriction.packageName, "Rule settings updated")
+            }
             _uiEvent.emit("Restriction saved for ${finalRestriction.appName}")
         }
     }
@@ -216,6 +220,9 @@ class FocusGuardViewModel(application: Application) : AndroidViewModel(applicati
                 return@launch
             }
             database.restrictionDao().deleteRestriction(restriction)
+            if (CutoffScheduler.currentlyScheduledPackage == restriction.packageName) {
+                CutoffScheduler.cancel(app, restriction.packageName, "Rule deleted")
+            }
             _uiEvent.emit("Restriction removed for ${restriction.appName}")
         }
     }
@@ -229,6 +236,9 @@ class FocusGuardViewModel(application: Application) : AndroidViewModel(applicati
                 return@launch
             }
             database.restrictionDao().updateRestriction(updated)
+            if (updated.isPaused && CutoffScheduler.currentlyScheduledPackage == updated.packageName) {
+                CutoffScheduler.cancel(app, updated.packageName, "Rule paused")
+            }
             val status = if (updated.isPaused) "paused" else "resumed"
             _uiEvent.emit("${restriction.appName} restriction $status")
         }

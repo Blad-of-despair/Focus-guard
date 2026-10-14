@@ -5,15 +5,16 @@ import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import com.example.FocusGuardApplication
 import com.example.data.local.SecurityManager
+import com.example.data.model.RestrictionMode
 import com.example.engine.RestrictionEngine
 import com.example.ui.screens.AppLockActivity
-import com.example.ui.screens.BlockedAppActivity
 import com.example.ui.screens.MindfulPauseActivity
-import com.example.util.BlockLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 class FocusGuardAccessibilityService : AccessibilityService() {
 
@@ -21,9 +22,11 @@ class FocusGuardAccessibilityService : AccessibilityService() {
 
     companion object {
         @Volatile
+        var instance: FocusGuardAccessibilityService? = null
+
+        @Volatile
         var currentForegroundPackage: String? = null
 
-        // Keeps track of temporary pass after Mindful Pause breathing
         val tempAllowedPackages = mutableMapOf<String, Long>()
 
         fun grantTemporaryPass(packageName: String, durationMillis: Long = 60_000L) {
@@ -31,22 +34,48 @@ class FocusGuardAccessibilityService : AccessibilityService() {
         }
     }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        CutoffScheduler.cancel(applicationContext, reason = "Accessibility service stopped")
+        if (instance == this) {
+            instance = null
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event == null) return
+        val eventType = event.eventType
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            return
+        }
+
         val packageName = event.packageName?.toString() ?: return
 
-        // Skip system UI, launchers, and our own app
+        // Skip system launcher, status bar, and FocusGuard itself
         if (packageName == applicationContext.packageName ||
             packageName == "com.android.systemui" ||
             packageName.contains("launcher")
         ) {
-            currentForegroundPackage = null
+            if (currentForegroundPackage != null) {
+                CutoffScheduler.cancel(applicationContext, currentForegroundPackage, "Returned to home or launcher")
+                currentForegroundPackage = null
+            }
             return
         }
 
+        val previousPackage = currentForegroundPackage
+        if (previousPackage != null && previousPackage != packageName) {
+            CutoffScheduler.cancel(applicationContext, previousPackage, "Switched away from app")
+        }
         currentForegroundPackage = packageName
 
-        // Check and handle package on every foreground transition without debounce
         serviceScope.launch {
             checkAndHandlePackage(packageName)
         }
@@ -57,11 +86,10 @@ class FocusGuardAccessibilityService : AccessibilityService() {
         val database = app.database
         val usageHelper = app.usageStatsHelper
 
-        // Check if temporary pass is active from Mindful Pause
         val passExpires = tempAllowedPackages[packageName] ?: 0L
         val isPassActive = passExpires > System.currentTimeMillis()
 
-        // 1. Check App Lock Protection
+        // 1. App Lock Protection
         val restriction = database.restrictionDao().getRestrictionSync(packageName)
         if (restriction != null && restriction.isAppLockProtected && !SecurityManager.isSessionUnlocked) {
             val lockIntent = Intent(this, AppLockActivity::class.java).apply {
@@ -72,11 +100,9 @@ class FocusGuardAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 2. Check Detox Plan Association
+        // 2. Detox Plan Mindful Pause
         val activePlans = database.detoxPlanDao().getActivePlansSync()
         val detoxPlan = activePlans.firstOrNull { it.getTargetPackages().contains(packageName) }
-
-        // If part of active detox plan and no pass yet, show Mindful Pause breathing screen first
         if (detoxPlan != null && !isPassActive) {
             val pauseIntent = Intent(this, MindfulPauseActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -87,27 +113,89 @@ class FocusGuardAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 3. Check App Restriction (Limits / Windows / Total Block)
+        // 3. Restriction Evaluation & Real-Time Cutoff Scheduling
         if (restriction != null && !restriction.isPaused) {
-            // Use real-time UsageEvents calculation including active ongoing session
             val todayUsageMillis = usageHelper.getAppUsageTodayWithCurrentSessionMillis(packageName)
             val todayUsageMinutes = (todayUsageMillis / (1000 * 60)).toInt()
 
             val result = RestrictionEngine.evaluate(restriction, todayUsageMinutes)
             if (result.isBlocked) {
-                // Log the block event for debugging and history
-                BlockLogger.logBlock(this, packageName, restriction.appName, result.reason)
+                // Limit already reached or outside allowed window: trigger cutoff immediately
+                CutoffScheduler.triggerCutoff(
+                    context = this,
+                    packageName = packageName,
+                    appName = restriction.appName,
+                    reason = result.reason
+                )
+            } else {
+                // Not yet blocked: calculate exact remaining milliseconds and schedule exact alarm
+                when (restriction.mode) {
+                    RestrictionMode.DAILY_LIMIT_ONLY -> {
+                        val limitMillis = restriction.dailyLimitMinutes * 60 * 1000L
+                        val remainingMillis = limitMillis - todayUsageMillis
+                        if (remainingMillis <= 0L) {
+                            CutoffScheduler.triggerCutoff(
+                                context = this,
+                                packageName = packageName,
+                                appName = restriction.appName,
+                                reason = "Daily usage limit reached in real time."
+                            )
+                        } else {
+                            CutoffScheduler.schedule(
+                                context = this,
+                                packageName = packageName,
+                                appName = restriction.appName,
+                                remainingMillis = remainingMillis
+                            )
+                        }
+                    }
 
-                // Launch BlockedAppActivity directly on top first (no concurrent home action race)
-                val blockIntent = Intent(this, BlockedAppActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra(BlockedAppActivity.EXTRA_APP_NAME, restriction.appName)
-                    putExtra(BlockedAppActivity.EXTRA_REASON, result.reason)
-                    putExtra(BlockedAppActivity.EXTRA_UNLOCK_TIME, result.unlockTimeFormatted)
-                    putExtra(BlockedAppActivity.EXTRA_PACKAGE_NAME, packageName)
+                    RestrictionMode.WINDOW_ONLY -> {
+                        val calendar = Calendar.getInstance()
+                        val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
+                        val currentMin = calendar.get(Calendar.MINUTE)
+                        val currentSec = calendar.get(Calendar.SECOND)
+                        val currentMinuteOfDay = currentHour * 60 + currentMin
+
+                        val inWindow = RestrictionEngine.isWithinAllowedWindow(
+                            currentMinuteOfDay,
+                            restriction.windowStartMinutes,
+                            restriction.windowEndMinutes
+                        )
+
+                        if (!inWindow) {
+                            CutoffScheduler.triggerCutoff(
+                                context = this,
+                                packageName = packageName,
+                                appName = restriction.appName,
+                                reason = "Outside allowed time window."
+                            )
+                        } else {
+                            val endMin = restriction.windowEndMinutes
+                            val remainingMinutes = if (endMin >= currentMinuteOfDay) {
+                                endMin - currentMinuteOfDay
+                            } else {
+                                (1440 - currentMinuteOfDay) + endMin
+                            }
+                            val remainingMillis = (remainingMinutes * 60 * 1000L) - (currentSec * 1000L)
+                            CutoffScheduler.schedule(
+                                context = this,
+                                packageName = packageName,
+                                appName = restriction.appName,
+                                remainingMillis = remainingMillis.coerceAtLeast(1000L)
+                            )
+                        }
+                    }
                 }
-                startActivity(blockIntent)
             }
+        }
+    }
+
+    fun triggerHomeAfterBlock() {
+        serviceScope.launch {
+            // Allow the BlockedAppActivity 400ms to mount its window before performing home action
+            delay(400L)
+            performGlobalAction(GLOBAL_ACTION_HOME)
         }
     }
 

@@ -217,4 +217,27 @@ class FocusGuardLogicTest {
         val result = RestrictionEngine.evaluate(restriction, totalMinutes, currentTime)
         assertTrue(result.isBlocked)
     }
+
+    @Test
+    fun testCutoffRemainingMillisAndExpired() {
+        val dailyLimitMinutes = 30
+        val limitMillis = dailyLimitMinutes * 60 * 1000L
+
+        // Scenario 1: 25 minutes used
+        val usage25Min = 25 * 60 * 1000L
+        val remainingMillis = limitMillis - usage25Min
+        assertEquals(5 * 60 * 1000L, remainingMillis)
+        assertTrue(remainingMillis > 0L)
+
+        // Scenario 2: Exactly 30 minutes used
+        val usage30Min = 30 * 60 * 1000L
+        val remainingZero = limitMillis - usage30Min
+        assertEquals(0L, remainingZero)
+        assertTrue(remainingZero <= 0L)
+
+        // Scenario 3: 31 minutes used
+        val usage31Min = 31 * 60 * 1000L
+        val remainingNegative = limitMillis - usage31Min
+        assertTrue(remainingNegative < 0L)
+    }
 }

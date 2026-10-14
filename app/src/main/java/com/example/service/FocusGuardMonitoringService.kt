@@ -10,13 +10,13 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.example.FocusGuardApplication
 import com.example.MainActivity
 import com.example.R
+import com.example.data.model.RestrictionMode
 import com.example.engine.RestrictionEngine
-import com.example.ui.screens.BlockedAppActivity
-import com.example.util.BlockLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -118,21 +118,22 @@ class FocusGuardMonitoringService : Service() {
             val app = application as? FocusGuardApplication ?: return@launch
             val database = app.database
             val usageHelper = app.usageStatsHelper
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
 
             while (isActive) {
                 var loopDelay = 3000L
 
                 try {
+                    val isScreenOn = powerManager?.isInteractive ?: true
                     val fgPackage = FocusGuardAccessibilityService.currentForegroundPackage
                     val activeRestrictions = database.restrictionDao().getActiveRestrictionsSync()
 
-                    // Check if the current foreground app has an active restriction
                     val fgRestriction = if (fgPackage != null) {
                         activeRestrictions.firstOrNull { it.packageName == fgPackage }
                     } else null
 
-                    if (fgRestriction != null) {
-                        // While a restricted app is in the foreground, check EVERY 1 SECOND in real-time
+                    if (fgRestriction != null && isScreenOn) {
+                        // While a restricted app is in the foreground and screen is on, check every 1 second
                         loopDelay = 1000L
 
                         // Calculate usage from real-time UsageEvents including the running session
@@ -141,23 +142,35 @@ class FocusGuardMonitoringService : Service() {
 
                         val result = RestrictionEngine.evaluate(fgRestriction, todayUsageMinutes)
                         if (result.isBlocked) {
-                            // Log and immediately enforce block
-                            BlockLogger.logBlock(this@FocusGuardMonitoringService, fgRestriction.packageName, fgRestriction.appName, result.reason)
-
-                            val blockIntent = Intent(this@FocusGuardMonitoringService, BlockedAppActivity::class.java).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                putExtra(BlockedAppActivity.EXTRA_APP_NAME, fgRestriction.appName)
-                                putExtra(BlockedAppActivity.EXTRA_REASON, result.reason)
-                                putExtra(BlockedAppActivity.EXTRA_UNLOCK_TIME, result.unlockTimeFormatted)
-                                putExtra(BlockedAppActivity.EXTRA_PACKAGE_NAME, fgRestriction.packageName)
+                            // Immediate cutoff
+                            CutoffScheduler.triggerCutoff(
+                                context = this@FocusGuardMonitoringService,
+                                packageName = fgRestriction.packageName,
+                                appName = fgRestriction.appName,
+                                reason = result.reason
+                            )
+                        } else {
+                            if (result.shouldWarn5Min) {
+                                showWarningNotification(fgRestriction.appName, result.minutesRemaining)
+                                database.restrictionDao().updateWarningNotified(fgRestriction.packageName, true)
                             }
-                            startActivity(blockIntent)
-                        } else if (result.shouldWarn5Min) {
-                            showWarningNotification(fgRestriction.appName, result.minutesRemaining)
-                            database.restrictionDao().updateWarningNotified(fgRestriction.packageName, true)
+
+                            // Keep cutoff scheduled if not already scheduled
+                            if (fgRestriction.mode == RestrictionMode.DAILY_LIMIT_ONLY) {
+                                val limitMillis = fgRestriction.dailyLimitMinutes * 60 * 1000L
+                                val remainingMillis = limitMillis - todayUsageMillis
+                                if (remainingMillis > 0L && CutoffScheduler.currentlyScheduledPackage != fgRestriction.packageName) {
+                                    CutoffScheduler.schedule(
+                                        context = this@FocusGuardMonitoringService,
+                                        packageName = fgRestriction.packageName,
+                                        appName = fgRestriction.appName,
+                                        remainingMillis = remainingMillis
+                                    )
+                                }
+                            }
                         }
                     } else {
-                        // General check for warning notifications on other restricted apps
+                        // Idle check for warning notifications
                         for (restriction in activeRestrictions) {
                             val todayUsageMillis = usageHelper.getAppUsageTodayMillis(restriction.packageName)
                             val todayUsageMinutes = (todayUsageMillis / (1000 * 60)).toInt()
